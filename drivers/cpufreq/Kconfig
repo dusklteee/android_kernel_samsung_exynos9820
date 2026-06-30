@@ -26,6 +26,33 @@ config CPU_FREQ_GOV_COMMON
 	select IRQ_WORK
 	bool
 
+config CPU_INPUT_BOOST
+	bool "CPU touch input boost"
+	default n
+	help
+	  Boosts each CPU cluster to a percentage of its max frequency for a
+	  short duration whenever a touchscreen input event is received. This
+	  reduces UI latency on touch/scroll. It is additive on top of the
+	  governor (only raises policy->min temporarily) and does not pin the
+	  clock to max, so it has negligible battery impact.
+
+config INPUT_BOOST_PERCENT
+	int "CPU input boost target (percent of cluster max freq)"
+	depends on CPU_INPUT_BOOST
+	range 1 100
+	default 65
+
+config INPUT_BOOST_DURATION_MS
+	int "CPU input boost duration (milliseconds)"
+	depends on CPU_INPUT_BOOST
+	default 200
+
+config FINGERPRINT_BOOST
+	bool "Fingerprint Boost"
+	default n
+	help
+	  Boosts available CPUs to max frequency on fingerprint sensor input.
+
 config CPU_FREQ_BOOST_SW
 	bool
 	depends on THERMAL

@@ -19,6 +19,9 @@
 #include <linux/shmem_fs.h>
 #include <linux/uaccess.h>
 #include <linux/mm_inline.h>
+#if defined(CONFIG_KSU_SUSFS_SUS_KSTAT) || defined(CONFIG_KSU_SUSFS_SUS_MAP)
+#include <linux/susfs_def.h>
+#endif
 #include <linux/ctype.h>
 #include <linux/io_record.h>
 #include <linux/freezer.h>
@@ -374,6 +377,29 @@ static void show_vma_header_prefix(struct seq_file *m,
 		   MAJOR(dev), MINOR(dev), ino);
 }
 
+#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
+extern void susfs_sus_ino_for_show_map_vma(unsigned long ino, dev_t *out_dev, unsigned long *out_ino);
+#endif
+
+#ifdef CONFIG_KSU_SUSFS_SUS_MAP
+/*
+ * SUS_MAP: a VMA backed by a file already flagged by sus_path
+ * (INODE_STATE_SUS_PATH) must be omitted entirely from the process memory
+ * maps. We ride the existing sus_path inode marking so no extra userspace
+ * command is required: anything added with 'add_sus_path' also disappears
+ * from /proc/<pid>/{maps,smaps,smaps_rollup,map_files}.
+ */
+static inline bool susfs_is_sus_map_vma(struct vm_area_struct *vma)
+{
+	struct inode *inode;
+
+	if (!vma || !vma->vm_file)
+		return false;
+	inode = file_inode(vma->vm_file);
+	return inode && (inode->i_state & INODE_STATE_SUS_PATH);
+}
+#endif
+
 static void
 show_map_vma(struct seq_file *m, struct vm_area_struct *vma, int is_pid)
 {
@@ -388,8 +414,17 @@ show_map_vma(struct seq_file *m, struct vm_area_struct *vma, int is_pid)
 
 	if (file) {
 		struct inode *inode = file_inode(vma->vm_file);
+#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
+		if (unlikely(inode->i_state & INODE_STATE_SUS_KSTAT)) {
+			susfs_sus_ino_for_show_map_vma(inode->i_ino, &dev, &ino);
+			goto bypass_orig_flow;
+		}
+#endif
 		dev = inode->i_sb->s_dev;
 		ino = inode->i_ino;
+#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
+bypass_orig_flow:
+#endif
 		pgoff = ((loff_t)vma->vm_pgoff) << PAGE_SHIFT;
 	}
 
@@ -447,6 +482,12 @@ done:
 
 static int show_map(struct seq_file *m, void *v, int is_pid)
 {
+#ifdef CONFIG_KSU_SUSFS_SUS_MAP
+	if (unlikely(susfs_is_sus_map_vma(v))) {
+		m_cache_vma(m, v);
+		return 0;
+	}
+#endif
 	show_map_vma(m, v, is_pid);
 	m_cache_vma(m, v);
 	return 0;
@@ -851,6 +892,9 @@ static int show_smap(struct seq_file *m, void *v, int is_pid)
 	int ret = 0;
 	bool rollup_mode;
 	bool last_vma;
+#ifdef CONFIG_KSU_SUSFS_SUS_MAP
+	bool is_sus_map = susfs_is_sus_map_vma(vma);
+#endif
 
 	if (priv->rollup) {
 		rollup_mode = true;
@@ -871,7 +915,11 @@ static int show_smap(struct seq_file *m, void *v, int is_pid)
 #ifdef CONFIG_SHMEM
 	/* In case of smaps_rollup, reset the value from previous vma */
 	mss->check_shmem_swap = false;
-	if (vma->vm_file && shmem_mapping(vma->vm_file->f_mapping)) {
+	if (
+#ifdef CONFIG_KSU_SUSFS_SUS_MAP
+	    !is_sus_map &&
+#endif
+	    vma->vm_file && shmem_mapping(vma->vm_file->f_mapping)) {
 		/*
 		 * For shared or readonly shmem mappings we know that all
 		 * swapped out pages belong to the shmem object, and we can
@@ -894,7 +942,21 @@ static int show_smap(struct seq_file *m, void *v, int is_pid)
 	}
 #endif
 	/* mmap_sem is held in m_start */
+#ifdef CONFIG_KSU_SUSFS_SUS_MAP
+	/*
+	 * sus_map VMA: don't account it (so it never shows up in the rollup
+	 * totals) and, outside rollup mode, omit its whole smaps block.
+	 */
+	if (!is_sus_map)
+#endif
 	walk_page_vma(vma, &smaps_walk);
+
+#ifdef CONFIG_KSU_SUSFS_SUS_MAP
+	if (is_sus_map && !rollup_mode) {
+		m_cache_vma(m, vma);
+		return SEQ_SKIP;
+	}
+#endif
 
 	if (!rollup_mode) {
 		show_map_vma(m, vma, is_pid);
@@ -2184,6 +2246,15 @@ static int show_numa_map(struct seq_file *m, void *v, int is_pid)
 
 	if (!mm)
 		return 0;
+
+#ifdef CONFIG_KSU_SUSFS_SUS_MAP
+	/* sus_map: omit this VMA from /proc/<pid>/numa_maps too (it leaks the
+	 * backing file path just like maps). */
+	if (unlikely(susfs_is_sus_map_vma(vma))) {
+		m_cache_vma(m, vma);
+		return 0;
+	}
+#endif
 
 	/* Ensure we start with an empty set of numa_maps statistics. */
 	memset(md, 0, sizeof(*md));

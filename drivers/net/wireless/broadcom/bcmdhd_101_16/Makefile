@@ -24,7 +24,7 @@
 #####################
 
 DHDCFLAGS += -DBCMUTILS_ERR_CODES -DUSE_NEW_RSPEC_DEFS
-DHDCFLAGS += -Wall -Werror -Wstrict-prototypes -Dlinux -DLINUX -DBCMDRIVER      \
+DHDCFLAGS += -Wall -Wstrict-prototypes -Dlinux -DLINUX -DBCMDRIVER      \
         -DBCMDONGLEHOST -DUNRELEASEDCHIP -DBCMDMA32 -DBCMFILEIMAGE      \
         -DDHDTHREAD -DDHD_BCMEVENTS -DSHOW_EVENTS -DWLP2P      \
         -DWIFI_ACT_FRAME -DARP_OFFLOAD_SUPPORT -DKEEP_ALIVE -DCSCAN     \
@@ -2022,6 +2022,10 @@ _dhd_lx_mk_dir := $(dir $(lastword $(MAKEFILE_LIST)))
 
 EXTRA_CFLAGS += $(BCMINTERNAL_DFLAGS)
 DHDOFILES += $(BCMINTERNAL_DHDOFILES)
+
+# Clang 23 (muito mais novo que o esperado por este blob) gera warnings que o
+# -Wall acima re-habilita; desarmados por último para não derrubar o build.
+EXTRA_CFLAGS += -Wno-unused-but-set-variable -Wno-unused-but-set-global
 
 ifeq ($(BUS_IFACE_SDIO),y)
 DHDOFILES += bcmsdh.o bcmsdh_linux.o bcmsdh_sdmmc.o bcmsdh_sdmmc_linux.o

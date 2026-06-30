@@ -109,6 +109,21 @@
 #include <linux/delayacct.h>
 #endif
 
+#ifdef CONFIG_KSU_SUSFS_SUS_MAP
+#include <linux/susfs_def.h>
+/* See fs/proc/task_mmu.c: a VMA backed by a sus_path-flagged inode is hidden
+ * from the memory maps; do the same for /proc/<pid>/map_files entries. */
+static inline bool susfs_is_sus_map_vma(struct vm_area_struct *vma)
+{
+	struct inode *inode;
+
+	if (!vma || !vma->vm_file)
+		return false;
+	inode = file_inode(vma->vm_file);
+	return inode && (inode->i_state & INODE_STATE_SUS_PATH);
+}
+#endif
+
 /* NOTE:
  *	Implementing inode permission operations in /proc is almost
  *	certainly an error.  Permission checks need to happen during
@@ -2188,6 +2203,13 @@ static struct dentry *proc_map_files_lookup(struct inode *dir,
 	if (!vma)
 		goto out_no_vma;
 
+#ifdef CONFIG_KSU_SUSFS_SUS_MAP
+	if (unlikely(susfs_is_sus_map_vma(vma))) {
+		result = -ENOENT;
+		goto out_no_vma;
+	}
+#endif
+
 	if (vma->vm_file)
 		result = proc_map_files_instantiate(dir, dentry, task,
 				(void *)(unsigned long)vma->vm_file->f_mode);
@@ -2250,6 +2272,10 @@ proc_map_files_readdir(struct file *file, struct dir_context *ctx)
 	 */
 
 	for (vma = mm->mmap, pos = 2; vma; vma = vma->vm_next) {
+#ifdef CONFIG_KSU_SUSFS_SUS_MAP
+		if (susfs_is_sus_map_vma(vma))
+			continue;
+#endif
 		if (vma->vm_file && ++pos > ctx->pos)
 			nr_files++;
 	}
@@ -2268,6 +2294,10 @@ proc_map_files_readdir(struct file *file, struct dir_context *ctx)
 		}
 		for (i = 0, vma = mm->mmap, pos = 2; vma;
 				vma = vma->vm_next) {
+#ifdef CONFIG_KSU_SUSFS_SUS_MAP
+			if (susfs_is_sus_map_vma(vma))
+				continue;
+#endif
 			if (!vma->vm_file)
 				continue;
 			if (++pos <= ctx->pos)

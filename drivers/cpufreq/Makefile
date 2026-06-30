@@ -8,6 +8,10 @@ obj-$(CONFIG_CPU_FREQ_STAT)             += cpufreq_stats.o
 # CPUfreq times
 obj-$(CONFIG_CPU_FREQ_TIMES)		+= cpufreq_times.o
 
+# Input boost drivers
+obj-$(CONFIG_CPU_INPUT_BOOST)		+= cpu_input_boost.o
+obj-$(CONFIG_FINGERPRINT_BOOST)		+= fp-boost.o
+
 # CPUfreq governors
 obj-$(CONFIG_CPU_FREQ_GOV_PERFORMANCE)	+= cpufreq_performance.o
 obj-$(CONFIG_CPU_FREQ_GOV_POWERSAVE)	+= cpufreq_powersave.o
