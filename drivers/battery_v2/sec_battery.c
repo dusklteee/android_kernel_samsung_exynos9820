@@ -15,6 +15,7 @@
 
 #include <linux/sec_ext.h>
 #include <linux/sec_debug.h>
+#include <linux/max86915_powershare.h>
 
 #if defined(CONFIG_SEC_ABC)
 #include <linux/sti/abc_common.h>
@@ -236,6 +237,30 @@ void sec_bat_set_misc_event(struct sec_battery_info *battery,
 	}
 }
 
+#if IS_ENABLED(CONFIG_MAX86915_POWERSHARE_LED)
+/*
+ * Mirror the Wireless PowerShare (reverse charging) state onto the rear
+ * HRM LEDs, matching the stock ROM. Called whenever the master enable
+ * (wc_tx_enable) or the tx_event status bitfield changes.
+ */
+static void sec_bat_powershare_led_update(struct sec_battery_info *battery)
+{
+	int state;
+
+	if (!battery->wc_tx_enable)
+		state = PS_LED_OFF;			/* PowerShare off */
+	else if (battery->tx_event & BATT_TX_EVENT_WIRELESS_RX_CONNECT)
+		state = PS_LED_CHARGING;		/* receiver coupled -> red */
+	else
+		state = PS_LED_STANDBY;			/* waiting -> blue */
+
+	max86915_powershare_led(state);
+}
+#else
+static inline void sec_bat_powershare_led_update(
+	struct sec_battery_info *battery) {}
+#endif
+
 void sec_bat_set_tx_event(struct sec_battery_info *battery,
 	unsigned int tx_event_val, unsigned int tx_event_mask) {
 
@@ -256,6 +281,7 @@ void sec_bat_set_tx_event(struct sec_battery_info *battery,
 		/* Assure receiving tx_event to App for sleep case */
 		wake_lock_timeout(&battery->tx_event_wake_lock, HZ * 2);
 		power_supply_changed(battery->psy_bat);
+		sec_bat_powershare_led_update(battery);
 	}
 	mutex_unlock(&battery->txeventlock);
 }
@@ -6980,6 +7006,7 @@ void sec_wireless_set_tx_enable(struct sec_battery_info *battery, bool wc_tx_ena
 	pr_info("@Tx_Mode %s: TX Power enable ? (%d)\n", __func__, wc_tx_enable);
 
 	battery->wc_tx_enable = wc_tx_enable;
+	sec_bat_powershare_led_update(battery);
 
 	cancel_delayed_work(&battery->wpc_tx_en_work);
 	wake_lock(&battery->wpc_tx_en_wake_lock);
@@ -8722,6 +8749,7 @@ static int sec_battery_probe(struct platform_device *pdev)
 
 	battery->wc_rx_phm_mode = false;
 	battery->wc_tx_enable = false;
+	sec_bat_powershare_led_update(battery);
 	battery->uno_en = false;
 	battery->afc_disable = false;
 	battery->buck_cntl_by_tx = false;

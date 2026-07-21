@@ -186,6 +186,11 @@
 /* #define CONFIG_HRM_GREEN_BLUE */
 
 #include "max86915.h"
+#include <linux/max86915_powershare.h>
+
+/* PowerShare indicator LED currents (LED PA register value). */
+#define PS_LED_BLUE_CURRENT	0x3C	/* LED4 (blue) - standby */
+#define PS_LED_RED_CURRENT	0x41	/* LED2 (red)  - charging */
 
 static int hrm_debug = 1;
 static int hrm_info;
@@ -4890,6 +4895,62 @@ static void max86915_set_mode(struct max86915_device_data *data,
 	HRM_info("%s - set mode complete, onoff : %d m : %d c : %d\n",
 		__func__, onoff, mode, data->enabled_mode);
 }
+
+#if IS_ENABLED(CONFIG_MAX86915_POWERSHARE_LED)
+/*
+ * PowerShare service-LED indicator.
+ *
+ * Reuses the SVC LED path: MODE_SVC_IR is the only mode the driver keeps
+ * alive across suspend (see max86915_pm_suspend), so it is the mode we
+ * hold the LEDs in. The actual colour is chosen purely by which LED
+ * current register is left non-zero (LED2 = red, LED4 = blue); the range
+ * default (0x02) already matches what the stock indicator uses.
+ *
+ * A real HRM/SDK measurement owns the LEDs and takes priority, so bail
+ * out untouched whenever one is running.
+ *
+ * state: PS_LED_OFF / PS_LED_STANDBY (blue) / PS_LED_CHARGING (red).
+ */
+int max86915_powershare_led(int state)
+{
+	struct max86915_device_data *data = max86915_data;
+
+	if (!data)
+		return -ENODEV;
+
+	mutex_lock(&data->activelock);
+
+	/* Measurement in progress (anything but idle or our own SVC LED). */
+	if (data->enabled_mode != MODE_NONE &&
+	    data->enabled_mode != MODE_SVC_IR) {
+		mutex_unlock(&data->activelock);
+		return -EBUSY;
+	}
+
+	switch (state) {
+	case PS_LED_STANDBY:
+	case PS_LED_CHARGING:
+		if (data->enabled_mode != MODE_SVC_IR)
+			max86915_set_mode(data, PWR_ON, MODE_SVC_IR);
+		/* Only program the LEDs if the SVC mode actually came up. */
+		if (data->enabled_mode == MODE_SVC_IR)
+			max86915_set_current(0,
+				(state == PS_LED_CHARGING) ? PS_LED_RED_CURRENT : 0,
+				0,
+				(state == PS_LED_STANDBY) ? PS_LED_BLUE_CURRENT : 0);
+		break;
+	case PS_LED_OFF:
+	default:
+		if (data->enabled_mode == MODE_SVC_IR)
+			max86915_set_mode(data, PWR_OFF, MODE_NONE);
+		break;
+	}
+
+	mutex_unlock(&data->activelock);
+	return 0;
+}
+EXPORT_SYMBOL_GPL(max86915_powershare_led);
+#endif /* CONFIG_MAX86915_POWERSHARE_LED */
 
 /* hrm input enable/disable sysfs */
 static ssize_t max86915_enable_show(struct device *dev,

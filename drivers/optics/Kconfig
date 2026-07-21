@@ -31,6 +31,18 @@ config SENSORS_MAX86915
 	  This driver can also be built as a module.  If so, the module
 	  will be called max86915.
 
+config MAX86915_POWERSHARE_LED
+	bool "PowerShare indicator on the rear HRM LEDs"
+	default n
+	depends on SENSORS_MAX86915=y && BATTERY_SAMSUNG_V2=y
+	help
+	  Drive the rear HRM LEDs as a Wireless PowerShare (reverse charging)
+	  status indicator, mirroring the stock ROM: blue while waiting for a
+	  receiver, red while charging one. The Samsung battery driver notifies
+	  the HRM sensor driver on PowerShare state changes.
+
+	  Both drivers must be built-in (=y) so the exported hook links.
+
 config SENSORS_TCS3407
 	tristate "AMS TCS3407 MoBeam, RemCon, ALS, Proximity, Color, Flicker sensor"
 	depends on I2C && SYSFS
