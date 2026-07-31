@@ -2582,21 +2582,12 @@ int __weak arch_prctl_spec_ctrl_set(struct task_struct *t, unsigned long which,
 	return -EINVAL;
 }
 
-#ifdef CONFIG_KSU_SUSFS
-extern int susfs_handle_prctl(int option, unsigned long arg2, unsigned long arg3,
-			      unsigned long arg4, unsigned long arg5);
-#endif
 SYSCALL_DEFINE5(prctl, int, option, unsigned long, arg2, unsigned long, arg3,
 		unsigned long, arg4, unsigned long, arg5)
 {
 	struct task_struct *me = current;
 	unsigned char comm[sizeof(me->comm)];
 	long error;
-
-#ifdef CONFIG_KSU_SUSFS
-	if (susfs_handle_prctl(option, arg2, arg3, arg4, arg5))
-		return 0;
-#endif
 
 	error = security_task_prctl(option, arg2, arg3, arg4, arg5);
 	if (error != -ENOSYS)
