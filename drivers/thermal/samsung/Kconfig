@@ -16,3 +16,37 @@ config EXYNOS_ACPM_THERMAL
 	help
 	  This feature supports ACPM TMU plug-in for Exynos thermal driver.
 
+
+config EXYNOS_TMU_CPU_PASSIVE_TEMP
+	int "CPU throttling setpoint, in millicelsius (0 = keep the ECT value)"
+	depends on EXYNOS_THERMAL && ECT
+	default 0
+	help
+	  Temperature at which the CPU thermal zones start throttling. The
+	  stock value on Exynos 9820 is 83000, and it comes from the ECT blob,
+	  which overrides whatever the device tree declares - so this cannot be
+	  changed from the DTS, and the device tree lives in its own partition.
+	  Setting it here needs no partition write.
+
+	  Only the trip marked "passive" is affected. The active alerts at
+	  95/100/105/110C, the hot trip at 115C and the core hotplug thresholds
+	  are left exactly as the ECT set them, and values at or above 95000
+	  are rejected outright.
+
+	  The trip stays writable at runtime through
+	  /sys/class/thermal/thermal_zoneN/trip_point_M_temp, so this is only
+	  the boot default.
+
+	  Say 0 to keep stock behaviour.
+
+config EXYNOS_TMU_GPU_PASSIVE_TEMP
+	int "GPU throttling setpoint, in millicelsius (0 = keep the ECT value)"
+	depends on EXYNOS_THERMAL && ECT
+	default 0
+	help
+	  Same as EXYNOS_TMU_CPU_PASSIVE_TEMP, but for the G3D zone. Kept
+	  separate because the Mali-G76 on this SoC starts from a higher stock
+	  setpoint (88000) and has a history of instability under sustained 3D
+	  load, so raising it deserves its own decision.
+
+	  Say 0 to keep stock behaviour.

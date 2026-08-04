@@ -1337,6 +1337,61 @@ static int exynos_tmu_ect_get_param(struct ect_pidtm_block *pidtm_block, char *n
 	return param_value;
 }
 
+/*
+ * Raise the throttling setpoint once the ECT has had its say.
+ *
+ * The ECT blob overwrites the trip temperatures the device tree declared, so
+ * retuning them in the DTS achieves nothing - and the device tree lives in its
+ * own partition, shared by every beyond* model, which is not something worth
+ * flashing for a temperature. Doing it here needs no partition write at all.
+ *
+ * Only the passive trip is moved, and it is selected by trip type rather than
+ * by index: the active alerts (95..110C), the hot trip (115C) and the hotplug
+ * thresholds parsed above keep exactly what the ECT gave them, by construction.
+ *
+ * The trip stays writable through
+ * /sys/class/thermal/thermal_zoneN/trip_point_M_temp, so the setpoint can be
+ * lowered again at runtime without reflashing anything.
+ */
+static void exynos_tmu_raise_passive_trip(struct thermal_zone_device *tz)
+{
+	struct __thermal_zone *__tz = (struct __thermal_zone *)tz->devdata;
+	int target, i;
+
+	/*
+	 * The GPU is tuned separately. Its stock setpoint is already higher
+	 * than the CPU clusters', and this SoC has a history of falling over
+	 * under sustained 3D load, so it stays opt-in.
+	 */
+	if (!strncasecmp(tz->type, "G3D", THERMAL_NAME_LENGTH))
+		target = CONFIG_EXYNOS_TMU_GPU_PASSIVE_TEMP;
+	else
+		target = CONFIG_EXYNOS_TMU_CPU_PASSIVE_TEMP;
+
+	/* 0 means "leave whatever the ECT decided alone". */
+	if (target <= 0)
+		return;
+
+	/* Never reach into the range where the emergency alerts live. */
+	if (target >= 95 * MCELSIUS) {
+		pr_err("%s: %s: refusing setpoint %d, emergency range\n",
+				__func__, tz->type, target);
+		return;
+	}
+
+	for (i = 0; i < __tz->ntrips; i++) {
+		if (__tz->trips[i].type != THERMAL_TRIP_PASSIVE)
+			continue;
+		/* Only ever raise, never lower. */
+		if (__tz->trips[i].temperature >= target)
+			continue;
+
+		pr_info("%s: %s trip %d: %d -> %d\n", __func__, tz->type, i,
+				__tz->trips[i].temperature, target);
+		__tz->trips[i].temperature = target;
+	}
+}
+
 static int exynos_tmu_parse_ect(struct exynos_tmu_data *data)
 {
 	struct thermal_zone_device *tz = data->tzd;
@@ -1491,6 +1546,9 @@ static int exynos_tmu_parse_ect(struct exynos_tmu_data *data)
 		} else
 			data->hotplug_enable = false;
 	}
+
+	exynos_tmu_raise_passive_trip(tz);
+
 	return 0;
 };
 #endif
